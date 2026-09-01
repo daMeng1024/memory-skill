@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# 本地记忆库 CLI 入口。
+#
+# 代码根（本仓库）由脚本位置推出；数据根（记忆、索引、运行时）由
+# $MEM_HOME > ~/.config/mem/home 指针 > ~/.agent-memory 决定，和 memlib/config.py 一致。
+# Python 必须走数据根里的 venv：系统 python 常常没有 fastembed/numpy，
+# 任何 fallback 都会静默退化成"检索不到东西但也不报错"。
+set -euo pipefail
+
+# 解析软链：从 ~/.local/bin/mem 调用时 BASH_SOURCE 指向软链本身
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+CODE_ROOT="$(cd "$(dirname "$SELF")/.." && pwd)"
+
+if [ -n "${MEM_HOME:-}" ]; then
+    HOME_DIR="$MEM_HOME"
+elif [ -s "$HOME/.config/mem/home" ]; then
+    HOME_DIR="$(head -n1 "$HOME/.config/mem/home")"
+else
+    HOME_DIR="$HOME/.agent-memory"
+fi
+HOME_DIR="${HOME_DIR/#\~/$HOME}"
+
+PY="$HOME_DIR/.index/.venv/bin/python"
+
+# init 自带引导，不能要求它先有 venv——这一条命令允许用系统 python 跑
+if [ "${1:-}" = "init" ] && [ ! -x "$PY" ]; then
+    PY="$(command -v python3 || true)"
+    [ -n "$PY" ] || { echo "找不到 python3，无法初始化" >&2; exit 127; }
+fi
+
+if [ ! -x "$PY" ]; then
+    echo "记忆库运行时缺失：$PY" >&2
+    echo "数据根 = $HOME_DIR（改它：设 MEM_HOME，或写 ~/.config/mem/home）" >&2
+    echo "没初始化过就跑：$CODE_ROOT/bin/mem init" >&2
+    exit 127
+fi
+
+export MEM_HOME="$HOME_DIR"
+export PYTHONPATH="$CODE_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+export TOKENIZERS_PARALLELISM=false
+# python -m 默认把当前目录塞在 sys.path 最前面：在一个恰好有 memlib/ 的目录里
+# 跑 mem，加载的就是那份而不是本仓库的，而且不会有任何报错。3.11+ 用这个关掉。
+export PYTHONSAFEPATH=1
+
+exec "$PY" -m memlib.cli "$@"

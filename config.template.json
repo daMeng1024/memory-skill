@@ -1,0 +1,160 @@
+{
+  "_readme": "config.template.json —— mem init 的骨架，别直接改这份；本机配置在 $MEM_HOME/config.json",
+  "root": "<MEM_HOME>",
+  "index": {
+    "db": ".index/memory.db",
+    "backend": "numpy",
+    "chunk_target_chars": 600,
+    "chunk_max_chars": 1200,
+    "rrf_k": 60,
+    "candidate_depth": 30
+  },
+  "recall": {
+    "layer_quota": {
+      "L1": 3,
+      "L2": 2
+    },
+    "max_chunks_per_doc": 2,
+    "quota_min_sim": 0.3
+  },
+  "inject": {
+    "max_bytes": 4096
+  },
+  "embedding": {
+    "model": "<MODEL>",
+    "dim": 0,
+    "batch_size": 32,
+    "cache_dir": ".index/models",
+    "hf_endpoint": "<HF_ENDPOINT>",
+    "query_prefix": "<QUERY_PREFIX>"
+  },
+  "sources": [],
+  "agents": {
+    "claude": {
+      "kind": "claude_jsonl",
+      "label": "Claude Code",
+      "draft_cmd": [
+        "claude",
+        "-p",
+        "--model",
+        "{model}",
+        "--output-format",
+        "text"
+      ],
+      "draft_output": "stdout",
+      "resume_hint": "claude --resume {session_id}"
+    },
+    "codex": {
+      "kind": "codex_jsonl",
+      "label": "Codex",
+      "draft_cmd": [
+        "codex",
+        "exec",
+        "--ephemeral",
+        "--skip-git-repo-check",
+        "-s",
+        "read-only",
+        "-o",
+        "{outfile}"
+      ],
+      "draft_output": "file",
+      "resume_hint": "codex resume {session_id}",
+      "model_note": "不传 -m：--model 的默认值是 Claude 的模型名，覆盖过来会打不通自定义 provider；让 Codex 用 ~/.codex/config.toml 里配的模型"
+    }
+  },
+  "redaction": {
+    "skip_path_patterns": [
+      "/config/",
+      "\\.env$",
+      "auth\\.json$",
+      "\\.credentials\\.json$",
+      "cookie",
+      "\\.credentials"
+    ],
+    "patterns": [
+      [
+        "(?i)\\bsk-[A-Za-z0-9_\\-]{16,}",
+        "sk-<REDACTED>"
+      ],
+      [
+        "\\bghp_[A-Za-z0-9]{20,}",
+        "ghp_<REDACTED>"
+      ],
+      [
+        "\\bgho_[A-Za-z0-9]{20,}",
+        "gho_<REDACTED>"
+      ],
+      [
+        "\\bglpat-[A-Za-z0-9_\\-]{16,}",
+        "glpat-<REDACTED>"
+      ],
+      [
+        "(?i)\\bBearer\\s+[A-Za-z0-9._\\-]{16,}",
+        "Bearer <REDACTED>"
+      ],
+      [
+        "(?i)\\b(pass(word|wd)?|secret|token|access_key|secretkey|apikey|api_key|appsecret)\\b\\s*[=:]\\s*[\"']?[^\\s\"',;&)]{4,}",
+        "\\1=<REDACTED>"
+      ],
+      [
+        "(?i)access_token=[^\\s\"'&]+",
+        "access_token=<REDACTED>"
+      ],
+      [
+        "(?i)jdbc:[a-z0-9]+://[^\\s]*[?&]password=[^\\s&]+",
+        "jdbc:<REDACTED>"
+      ],
+      [
+        "(?i)\\b[A-Za-z0-9._%+\\-]+:[^\\s/@:]{4,}@(?=[A-Za-z0-9.\\-]+)",
+        "<REDACTED>@"
+      ],
+      [
+        "(?i)\\bAKID[A-Za-z0-9]{10,}",
+        "AKID<REDACTED>"
+      ],
+      [
+        "(?i)\\bLTAI[A-Za-z0-9]{12,}",
+        "LTAI<REDACTED>"
+      ],
+      [
+        "(?i)https://oapi\\.dingtalk\\.com/robot/send\\?[^\\s\"']+",
+        "https://oapi.dingtalk.com/robot/send?<REDACTED>"
+      ]
+    ],
+    "self_test": [
+      [
+        "key: sk-abcdefghijklmnopqrstuvwx",
+        "abcdefghijklmnopqrstuvwx"
+      ],
+      [
+        "token=abc123def456",
+        "abc123def456"
+      ],
+      [
+        "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9xxxx",
+        "eyJhbGci"
+      ],
+      [
+        "glpat-AbCdEfGhIjKlMnOpQr",
+        "AbCdEfGhIjKlMnOpQr"
+      ],
+      [
+        "https://oapi.dingtalk.com/robot/send?access_token=deadbeefcafe",
+        "deadbeefcafe"
+      ],
+      [
+        "ghp_AbCdEfGhIjKlMnOpQrSt01",
+        "AbCdEfGhIjKlMnOpQrSt01"
+      ],
+      [
+        "mysql://root:Sup3rS3cret@192.168.0.1:3306/db",
+        "Sup3rS3cret"
+      ]
+    ]
+  },
+  "session": {
+    "min_chars": 40,
+    "max_chars": 4000,
+    "skip_tool_results": true
+  }
+}
