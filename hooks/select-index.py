@@ -26,6 +26,9 @@ DEFAULT_MAX_BYTES = 4096
 ENTRY = re.compile(r"^-\s*\[[^\]]*\]\((memory/([a-z]+)/[^)]+\.md)\)")
 # 协作约束优先于项目事实：前者管"怎么跟我配合"，错过的代价最大
 TYPE_ORDER = {"user": 0, "feedback": 1, "reference": 2, "project": 3}
+# archived：已归档。auto：mem audit 自动放行、还没人抽查——在库里能召回，
+# 但不该无条件进每个会话的开场。人 mem approve 一次才转正。
+SKIP_STATUS = {"archived", "auto"}
 ARCHIVED_SECTION = re.compile(r"^#+\s*已归档")
 
 
@@ -67,7 +70,7 @@ def select(root: Path, max_bytes: int) -> tuple[str, int, int]:
             continue
         rel, mtype = m.group(1), m.group(2)
         f = root / rel
-        if not f.exists() or _status(f) == "archived":
+        if not f.exists() or _status(f) in SKIP_STATUS:
             continue
         entries.append((TYPE_ORDER.get(mtype, 9), -f.stat().st_mtime, line))
 

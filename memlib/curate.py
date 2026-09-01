@@ -232,6 +232,13 @@ def run_sync(cfg, args) -> int:
         print(f"  staging 残留 {len(staging)} 个批次：" + "，".join(p.name for p in staging))
         print("  审核后跑 mem promote <run-id>，不要的直接删目录")
 
+    print("\n== 待转正 ==")
+    auto = [f for f in memory_files(root) if read_frontmatter(f).get("status") == "auto"]
+    if auto:
+        print(f"  {len(auto)} 条自动放行的条目还没人抽查（不进开场注入）：mem approve --list")
+    else:
+        print("  无")
+
     print("\n== 过期候选 ==")
     cutoff = time.time() - args.stale_days * 86400
     stale = [
@@ -293,18 +300,30 @@ def _find(root: Path, name: str) -> Path | None:
     return None
 
 
-def _set_status(path: Path, status: str | None) -> None:
-    """在 frontmatter 里写入/删除顶层 status，其余内容原样不动。"""
+def upsert_front(path: Path, pairs: dict) -> None:
+    """在 frontmatter 顶层写入/删除 key（值为 None 表示删除），其余内容原样不动。
+
+    统一插在 `description:` 后面：顶层 key 追加到末尾虽然也是合法 YAML（不缩进就
+    结束了 metadata 那个嵌套映射），但读起来像是 metadata 的一部分，容易看错。
+    """
     lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
     end = next((i for i, l in enumerate(lines[1:], 1) if l.strip() == "---"), None)
     if not lines or not lines[0].startswith("---") or end is None:
         raise SystemExit(f"没有可解析的 frontmatter：{path}")
-    body = [l for l in lines[1:end] if not l.startswith(("status:", "archived_at:"))]
-    if status:
+    drop = tuple(f"{k}:" for k in pairs)
+    body = [l for l in lines[1:end] if not l.startswith(drop)]
+    add = [f"{k}: {v}\n" for k, v in pairs.items() if v is not None]
+    if add:
         anchor = next((i for i, l in enumerate(body) if l.startswith("description:")), -1)
-        add = [f"status: {status}\n", f"archived_at: {time.strftime('%Y-%m-%d')}\n"]
         body[anchor + 1 : anchor + 1] = add
     path.write_text("".join([lines[0]] + body + lines[end:]), encoding="utf-8")
+
+
+def _set_status(path: Path, status: str | None) -> None:
+    upsert_front(path, {
+        "status": status,
+        "archived_at": time.strftime("%Y-%m-%d") if status == "archived" else None,
+    })
 
 
 def _move_index_line(root: Path, rel: str, to_archive: bool) -> bool:
@@ -333,6 +352,39 @@ def _move_index_line(root: Path, rel: str, to_archive: bool) -> bool:
             del lines[h:]
     idx.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
     return True
+
+
+def run_approve(cfg, args) -> int:
+    """把 mem audit 自动放行的条目转正：摘掉 status: auto，它才进开场注入。"""
+    root = cfg["_root"]
+    pending = [(f, read_frontmatter(f)) for f in memory_files(root)]
+    pending = [(f, m) for f, m in pending if m.get("status") == "auto"]
+
+    if args.list or not args.name:
+        if not pending:
+            print("没有待转正的条目")
+            return 0
+        print(f"{len(pending)} 条自动放行、等人抽查（在库里、能召回，但不进开场注入）：")
+        for f, m in pending:
+            print(f"\n  {f.stem}  ({m.get('verified_at','?')})  {m.get('description','')}")
+            try:
+                for e in json.loads(m.get("evidence") or "[]"):
+                    print(f"      证据 {e}")
+            except json.JSONDecodeError:
+                pass
+        print("\n看过没问题：mem approve <name>；不对就 mem archive <name> 或直接删文件")
+        return 0
+
+    path = _find(root, args.name)
+    if path is None:
+        raise SystemExit(f"找不到这条记忆：{args.name}")
+    if read_frontmatter(path).get("status") != "auto":
+        print(f"{args.name} 不是待转正状态，无需 approve")
+        return 0
+    _set_status(path, None)
+    print(f"已转正：memory/{path.parent.name}/{path.name}（下次会话开场就会带上它）")
+    print("  记得跑 mem sync 让索引跟上")
+    return 0
 
 
 def run_archive(cfg, args) -> int:

@@ -33,7 +33,18 @@ PROMPT = """你在为一个本地记忆库起草候选记忆条目。下面是�
 - 任何凭据、token、密码、cookie、真实账号
 
 输出严格的 JSON 数组，不要 markdown 代码块包裹。每个元素：
-{{"type": "user|feedback|project|reference", "name": "kebab-case-短slug", "description": "一句话摘要", "body": "正文；feedback 和 project 必须包含 **Why:** 与 **How to apply:** 两行"}}
+{{"type": "user|feedback|project|reference", "name": "kebab-case-短slug", "description": "一句话摘要", "body": "正文；feedback 和 project 必须包含 **Why:** 与 **How to apply:** 两行", "verify": []}}
+
+`verify` 可选，是**这台机器上能立刻执行、且能证明这条记忆成立**的断言，会被自动执行：
+- {{"kind": "path", "path": "/abs/or/~/path"}}          该路径存在
+- {{"kind": "absent_path", "path": "..."}}              该路径不存在
+- {{"kind": "command", "command": "psql"}}              该命令在 PATH 里
+- {{"kind": "absent_command", "command": "mysql"}}      该命令不在 PATH 里
+- {{"kind": "grep", "path": "...", "pattern": "字面量"}}  该文件里含这个字符串
+- {{"kind": "git_ref", "repo": "/abs/repo", "ref": "master"}}  该 git 引用存在
+
+只在断言**真的能证明结论**时才给，宁可留空。证明不了就别硬凑：凑出来的断言会让
+一条没验过的记忆被自动放行。偏好和纠偏（user / feedback）没有可执行证据，一律留空。
 
 没有值得记的就输出 []。
 
@@ -170,8 +181,9 @@ def run_review(cfg, limit: int, model: str, timeout: int, max_chars: int, dry_ru
     )
     if drafted:
         print(f"\n共起草 {drafted} 条候选，落在：{out_dir}")
-        print("人工审核：删掉不要的 .md，然后")
-        print(f"  {root}/bin/mem promote {run_id}")
+        print("先过一遍自动审核，再看剩下的：")
+        print(f"  mem audit {run_id}      # 自动拒 / 自动过 / 留给人")
+        print(f"  mem promote {run_id}    # 人工看完剩下的再合入")
     else:
         print("\n没有产出候选条目。")
 
@@ -204,11 +216,17 @@ def _write_candidate(out_dir: Path, item: dict, row: dict) -> bool:
         return False
     out_dir.mkdir(parents=True, exist_ok=True)
     dest = out_dir / f"{mtype}__{name}.md"
+    # verify 存成单行 JSON：frontmatter 解析器只认顶层 key: value，别引进嵌套 YAML
+    verify = item.get("verify")
+    verify_line = ""
+    if isinstance(verify, list) and verify:
+        verify_line = "verify: " + json.dumps(verify, ensure_ascii=False) + "\n"
     dest.write_text(
         "---\n"
         f"name: {name}\n"
         f"description: {desc}\n"
-        "metadata:\n"
+        + verify_line
+        + "metadata:\n"
         f"  type: {mtype}\n"
         f"  created: {time.strftime('%Y-%m-%d')}\n"
         f"  from_session: {row.get('session_id','')}\n"
@@ -231,6 +249,7 @@ def run_promote(cfg, run_id: str):
 
     from .cli import _append_index
 
+    redactor = Redactor(cfg)
     moved = 0
     for f in files:
         mtype, _, rest = f.stem.partition("__")
@@ -244,6 +263,10 @@ def run_promote(cfg, run_id: str):
             print(f"  ! 已存在，跳过：{dest.relative_to(root)}（需要更新请手动合并）")
             continue
         text = f.read_text(encoding="utf-8")
+        # 候选正文从没被 scrub 过，promote 之后就进正式库、进 git。人工这条路同样得挡一下
+        if redactor.scrub(text) != text:
+            print(f"  ! 命中脱敏规则，疑似含凭据，跳过：{f.name}")
+            continue
         dest.write_text(text, encoding="utf-8")
         desc = ""
         for line in text.splitlines():

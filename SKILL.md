@@ -100,9 +100,23 @@ agent 原生写入（直接 Write 到 `$MEM_HOME/memory/<type>/`）也算通道�
 任务收尾、结论被推翻的记忆用 `mem archive <name>` 归档：仍可检索（标 `⚠ archived`），
 但不再占开场注入的预算。`--undo` 可还原。
 
-自动沉淀链路（会话结束 Hook → `mem review` 起草 → `staging/` → 人工审核 → `mem promote`）
-和跨 agent 接入见 [references/curate.md](references/curate.md)。
-模型起草的候选和历史会话都是不可信输入，审核时要查业务正确性和敏感信息。
+自动沉淀链路：会话结束 Hook → `mem review` 起草 → `mem audit` 自动分档 → 人看剩下的
+→ `mem promote`。`mem audit` 会自动拒掉命中脱敏规则、缺 `**Why:**`/`**How to apply:**`、
+路径写错、与已有条目重复的候选；能被可执行断言证明的 `project`/`reference` 直接进库，
+但挂 `status: auto`——**参与召回、不进开场注入**，等 `mem approve <name>` 才转正。
+
+`feedback` 和 `user` 永远不会被自动放行：纠偏和偏好是用户定的规矩，外部没有证据能验证它。
+
+```bash
+mem audit <run-id> --dry-run    # 只看判定
+mem audit <run-id>              # 分档落地
+mem approve --list              # 看待转正的条目和它们的证据
+mem approve <name>              # 抽查过了，转正
+```
+
+细节和跨 agent 接入见 [references/curate.md](references/curate.md)。
+模型起草的候选和历史会话都是不可信输入，自动放行只覆盖"机器能验的部分"，
+业务正确性仍然要人看。
 
 ## 排查
 

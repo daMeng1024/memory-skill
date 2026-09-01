@@ -42,6 +42,8 @@ mem init --dry-run -y        # 只打印将写入的配置和将执行的命令
 mem recall "<自然语言问题>"        # 检索，-k 条数，--layer memory|knowledge|session
 mem add --type feedback --description "一句话" <<'B' ... B    # 写一条记忆
 mem sync                          # 写完收口：对账 + 增量索引 + 报积压
+mem audit <run-id>                # 自动审核候选：自动拒 / 自动过 / 留给人
+mem approve <name>                # 把自动放行的条目转正（转正前不进开场注入）
 mem archive <name>                # 归档：不再进开场注入，仍可检索
 mem doctor                        # 自检（第一行会告诉你代码根和数据根在哪）
 ```

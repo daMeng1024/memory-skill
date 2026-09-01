@@ -18,10 +18,18 @@
 ```
 会话结束 hook ──▶ sessions/pending.jsonl ──mem review──▶ staging/<run-id>/*.md
                      （只记指针，无正文）                        │
-                                                        人工删掉不要的
-                                                                │
-                                                   mem promote ▼
-                                          memory/<type>/*.md + MEMORY.md
+                                                          mem audit
+                                        ┌───────────────────┼───────────────────┐
+                                    rejected/            自动过              留在原地
+                                   （附拒绝理由）      （附执行过的证据）      （人看）
+                                                          │                    │
+                                                memory/<type>/*.md        人工删掉不要的
+                                                status: auto                   │
+                                                能召回、不进注入          mem promote ▼
+                                                          │           memory/<type>/*.md
+                                                 mem approve <name>    + MEMORY.md
+                                                          ▼
+                                                       转正，进注入
 ```
 
 硬约束：**模型起草的候选永远落 `staging/`，不直接进事实源**。写错的记忆比没记忆更糟。
@@ -29,12 +37,61 @@
 ```bash
 mem review --dry-run       # 先看会处理哪些会话，不调模型
 mem review --limit 5       # 起草 5 个会话的候选
-mem promote <run-id>       # 人工删完不要的之后再合入
-mem sync                   # promote 之后收口
+mem audit <run-id>         # 自动分档（--dry-run 只判定不动文件）
+mem promote <run-id>       # 人工看完剩下的再合入
+mem sync                   # 收口
 ```
 
-审核候选时逐条查：业务结论对不对、有没有把"当时的临时状态"写成长期事实、
-有没有 token/密码/cookie/真实账号、任务号和路径是不是还成立。
+## 自动审核（mem audit）
+
+风险是不对称的，所以两档门槛不一样：**自动拒**判错了最多漏一条，transcript 还在，
+随时能重抽；**自动过**判错了会让一条错记忆进正式库、进开场注入，之后每个会话都被它影响。
+
+**自动拒**（有确定性判据就拒，候选移到 `staging/<run-id>/rejected/`，报告里写明理由）：
+
+| 判据 | 说明 |
+|---|---|
+| 命中脱敏规则 | 候选正文从没被 scrub 过，promote 之后直接进 git。这条优先级最高 |
+| 缺 `**Why:**` / `**How to apply:**` | `feedback` 和 `project` 的硬性结构要求 |
+| slug 不合法、缺 description | 格式 |
+| 路径写错 | 正文里反引号包的路径**父目录存在但自己不存在**——这是写错的强证据。父目录也不在的不算，那多半是远端或别人机器上的路径 |
+| 正式库已有同名条目 | 需要更新就手动合并，不靠 promote 覆盖 |
+| 与已有条目语义重复 | 相似度 ≥ `audit.dup_similarity`；超过 `reconfirm_similarity` 时顺手给旧条目刷 `verified_at`（只刷时间戳，不引入新事实） |
+
+**自动过**（三个条件同时成立才放行）：
+
+1. 类型在 `audit.auto_types` 里（默认只有 `project` / `reference`）
+2. 候选自带 `verify` 断言，且**全部执行通过**
+3. 上面所有自动拒的判据都没命中
+
+断言由起草那一步的模型显式给出（`review.py` 的 PROMPT 里有格式），`audit` 只负责执行——
+从散文里正则挖断言太容易挖错，挖错的代价是放行一条没验过的记忆。支持的断言：
+
+```jsonc
+{"kind": "path",            "path": "/abs/or/~/path"}        // 存在
+{"kind": "absent_path",     "path": "..."}                   // 不存在
+{"kind": "command",         "command": "psql"}               // 在 PATH 里
+{"kind": "absent_command",  "command": "mysql"}              // 不在 PATH 里
+{"kind": "grep",            "path": "...", "pattern": "字面量"}
+{"kind": "git_ref",         "repo": "/abs/repo", "ref": "master"}
+```
+
+**`user` 和 `feedback` 永远不会被自动放行**：偏好和纠偏是人定的规矩，外部没有任何证据
+能验证它，机器无权代判。
+
+**安全阀**：自动放行的条目进正式库时挂 `status: auto`，**参与召回（结果标 `⚠ auto`）
+但不进开场注入**。注入是无条件进每个会话上下文的，召回是按需的——错了也只在你主动
+查到时才见到。抽查过了 `mem approve <name>` 转正；不对就 `mem archive <name>` 或直接删。
+
+```bash
+mem approve --list         # 待转正的条目 + 它们各自执行过的证据
+mem approve <name>         # 转正
+```
+
+`mem sync` 会报还有几条待转正。
+
+人工审核剩下那些时，逐条查：业务结论对不对、有没有把"当时的临时状态"写成长期事实、
+任务号和路径是不是还成立。
 
 队列语义：`pending`（待起草）→ `drafted`（已起草待审）→ `promoted`（已合入）。
 `mem sync` 会把已了结的行搬进 `sessions/processed.jsonl`，队列文件只留在途的。

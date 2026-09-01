@@ -20,6 +20,15 @@
   "inject": {
     "max_bytes": 4096
   },
+  "audit": {
+    "dup_similarity": 0.55,
+    "reconfirm_similarity": 0.85,
+    "auto_types": [
+      "project",
+      "reference"
+    ],
+    "auto_promote": true
+  },
   "embedding": {
     "model": "<MODEL>",
     "dim": 0,

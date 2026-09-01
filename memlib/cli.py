@@ -169,7 +169,7 @@ def cmd_recall(args, cfg):
             hint = _resume_hint(cfg, meta.get("agent"), meta["session_id"])
             if hint:
                 loc += f"  ← {hint}"
-        stale = f" ⚠ {meta['status']}" if meta.get("status") in ("stale", "archived") else ""
+        stale = f" ⚠ {meta['status']}" if meta.get("status") in ("stale", "archived", "auto") else ""
         vat = f"  verified_at={meta['verified_at']}" if meta.get("verified_at") else ""
         print(f"   {loc}{vat}{stale}")
         body = r["text"].strip()
@@ -257,6 +257,18 @@ def cmd_archive(args, cfg):
     from .curate import run_archive
 
     raise SystemExit(run_archive(cfg, args))
+
+
+def cmd_approve(args, cfg):
+    from .curate import run_approve
+
+    raise SystemExit(run_approve(cfg, args))
+
+
+def cmd_audit(args, cfg):
+    from .audit import run_audit
+
+    raise SystemExit(run_audit(cfg, args))
 
 
 # --------------------------------------------------------------- export
@@ -462,6 +474,16 @@ def main(argv=None):
     pv.add_argument("--max-chars", type=int, default=24000, help="送入模型的会话摘要上限")
     pv.add_argument("--dry-run", action="store_true", help="只看会处理哪些会话，不调模型")
     pv.set_defaults(func=cmd_review)
+
+    pau = sub.add_parser("audit", help="自动审核候选：自动拒 / 自动过 / 留给人")
+    pau.add_argument("run_id", nargs="?", default=None, help="不传就审所有批次")
+    pau.add_argument("--dry-run", action="store_true", help="只判定不移动文件")
+    pau.set_defaults(func=cmd_audit)
+
+    pap = sub.add_parser("approve", help="把自动放行的条目转正，使其进入开场注入")
+    pap.add_argument("name", nargs="?", default=None)
+    pap.add_argument("--list", action="store_true", help="列出待转正的条目和证据")
+    pap.set_defaults(func=cmd_approve)
 
     pp = sub.add_parser("promote", help="把审核后的 staging 批次合入正式库")
     pp.add_argument("run_id")
