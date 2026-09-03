@@ -87,11 +87,18 @@ def check_assertion(a: dict, root: Path) -> tuple[bool, str]:
 def broken_paths(body: str) -> list[str]:
     """正文里写死的路径，父目录在但自己不在——这是路径写错的强证据。
 
-    父目录也不在的不算：那多半是远端机器、容器里或别人机器上的路径，
-    本机验不了不等于是错的。
+    两类不算：
+
+    - 父目录也不在的。那多半是远端机器、容器里或别人机器上的路径，本机验不了
+      不等于是错的。
+    - 根下只有一段的（`/compact`、`/clear`）。这些几乎都是斜杠命令而不是路径，
+      而根目录必然存在，不排掉就会稳定误伤所有提到斜杠命令的候选。真正的根下
+      单段目录（/etc、/tmp）本来就存在，不会被判成缺失。
     """
     bad = []
     for raw in PATH_RE.findall(body):
+        if raw.startswith("/") and raw.count("/") == 1:
+            continue
         p = Path(raw.replace("~", str(Path.home()), 1))
         if not p.exists() and p.parent.exists() and p.parent != p:
             bad.append(raw)
