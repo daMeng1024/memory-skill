@@ -517,6 +517,10 @@ def main(argv=None):
     pd = sub.add_parser("doctor", help="环境自检")
     pd.set_defaults(func=cmd_doctor)
 
+    from . import web as webmod
+
+    webmod.add_parser(sub)
+
     args = p.parse_args(argv)
     # init 是唯一在"还没有配置"时也要能跑的子命令
     cfg = cfgmod.load(args.config) if getattr(args, "needs_config", True) else None

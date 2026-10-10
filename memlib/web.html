@@ -1,0 +1,1097 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>记忆库看板</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f1f3f6; --line: #e2e5ea;
+  --text: #1d2330; --muted: #677085; --faint: #9aa2b1;
+  --accent: #2f6fde; --accent-soft: #e6eefc;
+  --l1: #2f6fde; --l2: #17a37a; --l3: #c27a12;
+  --ok: #17a37a; --warn: #c27a12; --bad: #d1453b;
+  --mark: #fff0a8; --mark-text: #1d2330;
+  --shadow: 0 1px 2px rgba(20, 30, 50, .06);
+  --mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12151b; --panel: #1a1e26; --panel-2: #222733; --line: #2d3340;
+    --text: #e3e7ee; --muted: #9aa3b4; --faint: #6b7385;
+    --accent: #6c9cf0; --accent-soft: #23314d;
+    --l1: #6c9cf0; --l2: #3cc79c; --l3: #e0a040;
+    --ok: #3cc79c; --warn: #e0a040; --bad: #ef6f66;
+    --mark: #6b5a12; --mark-text: #fff6cc;
+    --shadow: none;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 14px/1.55 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+}
+button, input, select { font: inherit; color: inherit; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 16px 48px; }
+
+header.top {
+  position: sticky; top: 0; z-index: 5;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px); border-bottom: 1px solid var(--line);
+}
+header.top .wrap { display: flex; align-items: center; gap: 20px; padding-top: 10px; padding-bottom: 0; flex-wrap: wrap; }
+header.top h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: .02em; }
+header.top .sub { color: var(--muted); font-size: 12px; margin-left: auto; display: flex; gap: 12px; align-items: center; }
+nav.tabs { display: flex; gap: 2px; width: 100%; overflow-x: auto; }
+nav.tabs a {
+  padding: 8px 14px; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+nav.tabs a.on { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+
+section.view { display: none; padding-top: 18px; }
+section.view.on { display: block; }
+
+.card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: var(--shadow); padding: 16px; margin-bottom: 16px; min-width: 0;
+}
+.card > h2 { font-size: 14px; margin: 0 0 12px; font-weight: 650; display: flex; align-items: baseline; gap: 8px; }
+.card > h2 small { color: var(--muted); font-weight: 400; font-size: 12px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid2 > .card { margin-bottom: 0; }
+@media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; box-shadow: var(--shadow); }
+.kpi .k { color: var(--muted); font-size: 12px; }
+.kpi .v { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.kpi .d { color: var(--faint); font-size: 12px; }
+
+.muted { color: var(--muted); }
+.faint { color: var(--faint); }
+.mono { font-family: var(--mono); font-size: 12.5px; }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.note { color: var(--muted); font-size: 12px; margin-top: 8px; }
+.banner { border: 1px solid var(--warn); color: var(--warn); border-radius: 8px; padding: 8px 12px; margin-bottom: 16px; }
+.err { color: var(--bad); }
+
+.tbl-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; white-space: nowrap; }
+tbody tr:last-child td { border-bottom: none; }
+tr.click { cursor: pointer; }
+tr.click:hover td { background: var(--panel-2); }
+
+.badge {
+  display: inline-block; padding: 0 6px; border-radius: 4px; font-size: 11.5px; line-height: 18px;
+  font-weight: 600; white-space: nowrap; border: 1px solid transparent;
+}
+.b-L1 { color: var(--l1); border-color: var(--l1); }
+.b-L2 { color: var(--l2); border-color: var(--l2); }
+.b-L3 { color: var(--l3); border-color: var(--l3); }
+.b-K { background: var(--accent-soft); color: var(--accent); }
+.b-V { background: color-mix(in srgb, var(--l2) 18%, transparent); color: var(--l2); }
+.b-ok { color: var(--ok); border-color: var(--ok); }
+.b-warn { color: var(--warn); border-color: var(--warn); }
+.b-bad { color: var(--bad); border-color: var(--bad); }
+.b-gray { color: var(--muted); border-color: var(--line); }
+
+.bar { height: 8px; border-radius: 4px; background: var(--panel-2); overflow: hidden; min-width: 60px; }
+.bar > i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+.stack { display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: var(--panel-2); margin: 4px 0 10px; }
+.stack > i { display: block; height: 100%; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; }
+.legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; background: var(--c); }
+
+.hist { display: flex; align-items: flex-end; gap: 4px; height: 140px; padding-top: 8px; }
+.hist .col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; min-width: 0; }
+.hist .col i { display: block; width: 100%; background: var(--accent); border-radius: 3px 3px 0 0; min-height: 1px; opacity: .85; }
+.hist .col span { font-size: 10.5px; color: var(--faint); margin-top: 4px; white-space: nowrap; }
+.hist .col b { font-size: 10.5px; color: var(--muted); font-weight: 500; margin-bottom: 2px; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 2px 10px;
+  font-size: 12.5px; cursor: pointer; white-space: nowrap;
+}
+.chip:hover { border-color: var(--accent); }
+.chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.chip em { font-style: normal; color: var(--faint); margin-left: 4px; font-variant-numeric: tabular-nums; }
+
+.form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.form input[type=text], .form input[type=search] {
+  flex: 1 1 280px; min-width: 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+}
+.form input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+select { padding: 7px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.btn {
+  padding: 7px 16px; border: 1px solid var(--accent); background: var(--accent); color: #fff; border-radius: 8px; cursor: pointer;
+}
+.btn.ghost { background: transparent; color: var(--accent); }
+.btn.small { padding: 2px 10px; font-size: 12px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: none; background: var(--panel); padding: 7px 12px; cursor: pointer; color: var(--muted); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+.meta-line { color: var(--muted); font-size: 12.5px; margin: 12px 0; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+.terms { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.terms code { background: var(--panel-2); border-radius: 4px; padding: 0 5px; font-family: var(--mono); font-size: 12px; }
+
+.result { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 12px 14px; margin-bottom: 10px; box-shadow: var(--shadow); }
+.result .hd { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.result .rank { color: var(--faint); font-variant-numeric: tabular-nums; min-width: 22px; }
+.result .title { font-weight: 600; }
+.result .loc { color: var(--faint); font-size: 12px; margin: 3px 0 8px; word-break: break-all; font-family: var(--mono); }
+.text { white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.6; }
+.text.clamp { max-height: 9.6em; overflow: hidden; -webkit-mask-image: linear-gradient(#000 70%, transparent); mask-image: linear-gradient(#000 70%, transparent); }
+.result .ft { display: flex; gap: 8px; margin-top: 8px; }
+mark { background: var(--mark); color: var(--mark-text); border-radius: 2px; padding: 0 1px; }
+
+.empty { color: var(--faint); text-align: center; padding: 28px 0; }
+.loading { color: var(--muted); padding: 16px 0; }
+
+dialog {
+  width: min(920px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 0;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text);
+}
+dialog::backdrop { background: rgba(10, 14, 22, .45); }
+dialog .dh { position: sticky; top: 0; background: var(--panel); border-bottom: 1px solid var(--line); padding: 14px 16px; z-index: 1; }
+dialog .dh h3 { margin: 0 32px 4px 0; font-size: 15px; }
+dialog .dh .x { position: absolute; right: 12px; top: 10px; border: none; background: none; font-size: 20px; cursor: pointer; color: var(--muted); }
+dialog .db { padding: 12px 16px 16px; }
+.chunk { border-left: 3px solid var(--line); padding: 6px 0 6px 12px; margin-bottom: 12px; }
+.chunk.hit { border-left-color: var(--accent); background: var(--accent-soft); border-radius: 0 6px 6px 0; }
+.chunk .ch { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+
+details > summary { cursor: pointer; color: var(--muted); }
+
+/* 关于 */
+.prose { max-width: 860px; }
+.prose p, .prose li { line-height: 1.75; }
+.prose p { margin: 0 0 10px; }
+.prose ul { margin: 0 0 10px; padding-left: 20px; }
+.prose code { background: var(--panel-2); border-radius: 4px; padding: 0 5px; font-family: var(--mono); font-size: 12.5px; }
+.prose h3 { font-size: 13.5px; margin: 16px 0 6px; }
+.lead { font-size: 15px; line-height: 1.8; }
+.lead b { color: var(--accent); }
+.diagram { background: var(--panel-2); border-radius: 8px; padding: 12px 14px; font-family: var(--mono); font-size: 12px; line-height: 1.55; overflow-x: auto; white-space: pre; margin: 0; }
+.layers3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+@media (max-width: 760px) { .layers3 { grid-template-columns: 1fr; } }
+.layer-card { border: 1px solid var(--line); border-top: 3px solid var(--c); border-radius: 8px; padding: 12px; }
+.layer-card h4 { margin: 0 0 4px; font-size: 13.5px; }
+.layer-card .n { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.layer-card p { margin: 6px 0 0; font-size: 12.5px; color: var(--muted); line-height: 1.6; }
+.why { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 760px) { .why { grid-template-columns: 1fr; } }
+.why > div { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+.why h4 { margin: 0 0 6px; font-size: 13.5px; }
+.why p { margin: 0 0 6px; font-size: 13px; line-height: 1.7; color: var(--text); }
+.why .diagram { font-size: 11.5px; }
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.toc a { text-decoration: none; color: var(--text); }
+.gauge { display: flex; align-items: center; gap: 10px; margin: 6px 0; font-size: 13px; }
+.gauge .bar { flex: 1; }
+
+/* 待审核 */
+.tab-n { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px; background: var(--bad); color: #fff; font-size: 11px; line-height: 18px; text-align: center; font-weight: 600; }
+.rv-item { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+.rv-item .hd { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rv-item .desc { margin: 4px 0 0; font-size: 13px; }
+.rv-item .acts { margin-left: auto; display: flex; gap: 6px; }
+.rv-item pre.text { background: var(--panel-2); border-radius: 6px; padding: 8px 10px; margin: 8px 0 0; font-family: inherit; }
+.rv-batch { margin-bottom: 16px; }
+.rv-batch > .bh { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+.btn.danger { background: var(--bad); border-color: var(--bad); }
+.btn.ghost.danger { background: transparent; color: var(--bad); }
+.btn:disabled { opacity: .5; cursor: progress; }
+.out { background: var(--panel-2); border-radius: 8px; padding: 10px 12px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; margin: 0; }
+.out-box { border: 1px solid var(--line); border-left: 3px solid var(--ok); border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; background: var(--panel); }
+.out-box.fail { border-left-color: var(--bad); }
+.out-box .oh { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; font-size: 13px; }
+.chip.common { opacity: .45; text-decoration: line-through; }
+.tab-n[hidden] { display: none; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <h1>记忆库看板</h1>
+    <div class="sub"><span id="hdr-info">加载中…</span><button class="btn ghost small" id="reload">刷新</button></div>
+    <nav class="tabs">
+      <a href="#overview" data-tab="overview">概览</a>
+      <a href="#search" data-tab="search">搜索</a>
+      <a href="#keyword" data-tab="keyword">关键词</a>
+      <a href="#memory" data-tab="memory">记忆条目</a>
+      <a href="#review" data-tab="review">待审核<span class="tab-n" id="rv-n" hidden></span></a>
+      <a href="#about" data-tab="about">关于</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <!-- 概览 -->
+  <section class="view" id="v-overview">
+    <div id="ov-banner"></div>
+    <div class="kpis" id="ov-kpis"></div>
+    <div class="card">
+      <h2>按来源 <small>点一行看该来源的热词</small></h2>
+      <div class="legend" id="ov-layer-legend"></div>
+      <div class="stack" id="ov-layer-stack"></div>
+      <div class="tbl-wrap"><table id="ov-sources"></table></div>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h2>磁盘占用 <small id="ov-dbpath" class="mono"></small></h2>
+        <div class="stack" id="ov-table-stack"></div>
+        <div class="legend" id="ov-table-legend"></div>
+        <div class="tbl-wrap" style="margin-top:12px"><table id="ov-files"></table></div>
+      </div>
+      <div class="card">
+        <h2>块长度分布 <small id="ov-hist-note"></small></h2>
+        <div class="hist" id="ov-hist"></div>
+        <div class="note">按字符数分桶，切块目标 / 上限见 config.json 的 chunk_target_chars / chunk_max_chars。</div>
+      </div>
+    </div>
+    <div class="grid2" style="margin-top:16px">
+      <div class="card">
+        <h2>写入积压 <small>staging 待审 + 会话抽取队列</small></h2>
+        <div id="ov-backlog"></div>
+      </div>
+      <div class="card">
+        <h2>L1 记忆条目 <small>按 type</small></h2>
+        <div id="ov-memtypes"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 搜索 -->
+  <section class="view" id="v-search">
+    <div class="card">
+      <form class="form" id="s-form">
+        <input type="search" id="s-q" placeholder="自然语言问题或精确词，如：task-1024 重试 / 这个接口为什么偶尔超时" autocomplete="off">
+        <div class="seg" id="s-mode">
+          <button type="button" data-v="hybrid" class="on">混合</button>
+          <button type="button" data-v="keyword">只关键词</button>
+          <button type="button" data-v="semantic">只语义</button>
+        </div>
+        <select id="s-layer" title="层">
+          <option value="">全部层</option>
+          <option value="L1">L1 记忆</option>
+          <option value="L2">L2 知识</option>
+        </select>
+        <select id="s-k" title="条数">
+          <option>8</option><option selected>20</option><option>50</option>
+        </select>
+        <button class="btn" type="submit">搜索</button>
+      </form>
+      <div class="note">混合 = 与 <span class="mono">mem recall</span> 相同（关键词 + 语义 RRF 融合，未限定层时 L1/L2 有保底席位）。K = 关键词腿命中，V = 语义腿命中。</div>
+    </div>
+    <div id="s-info" class="meta-line"></div>
+    <div id="s-results"></div>
+  </section>
+
+  <!-- 关键词 -->
+  <section class="view" id="v-keyword">
+    <div class="card">
+      <h2>词命中分布 <small>字面子串命中 + 检索关键词腿怎么拆这个词</small></h2>
+      <form class="form" id="t-form">
+        <input type="search" id="t-q" placeholder="输入一个词，如：超时重试 / RetryTemplate" autocomplete="off">
+        <button class="btn" type="submit">分析</button>
+        <button class="btn ghost" type="button" id="t-search">用它搜索</button>
+      </form>
+      <div id="t-out"></div>
+    </div>
+    <div class="card">
+      <h2>热词榜 <small id="h-note"></small></h2>
+      <div class="form" style="margin-bottom:12px">
+        <select id="h-scope"><option value="all">全部来源</option></select>
+        <div class="seg" id="h-kind">
+          <button type="button" data-v="word" class="on">英文 / 标识符</button>
+          <button type="button" data-v="cjk2">中文两字</button>
+          <button type="button" data-v="cjk3">中文三字</button>
+        </div>
+        <select id="h-limit"><option>50</option><option selected>100</option><option>200</option></select>
+        <label class="muted" style="font-size:13px"><input type="checkbox" id="h-hide" checked> 隐藏检索时会被丢弃的高频词</label>
+      </div>
+      <div id="h-out"></div>
+      <div class="note">按「出现在多少个块里」计数（df，文档频率），点词看命中分布。和检索关键词腿同一把尺子：df 超过 25% 的词检索时会被丢掉（没有区分度），勾掉开关后以删除线显示。库里的倒排是 trigram 三字切片而非分词，中文这里按 2/3 字切片近似，会混入跨词碎片。</div>
+    </div>
+  </section>
+
+  <!-- 记忆条目 -->
+  <section class="view" id="v-memory">
+    <div class="card">
+      <div class="form" style="margin-bottom:12px">
+        <input type="search" id="m-q" placeholder="按 name / 描述过滤" autocomplete="off">
+        <select id="m-status">
+          <option value="">全部状态</option>
+          <option value="-">正常</option>
+          <option value="auto">auto 待转正</option>
+          <option value="archived">已归档</option>
+          <option value="stale">过时</option>
+        </select>
+      </div>
+      <div class="chips" id="m-types" style="margin-bottom:12px"></div>
+      <div class="tbl-wrap"><table id="m-table"></table></div>
+      <div class="note">点一行看索引里的切块。「未索引」表示文件已落盘但还没跑 <span class="mono">mem sync</span>。</div>
+    </div>
+    <div class="card">
+      <details id="m-staging-box">
+        <summary id="m-staging-sum">staging 待审候选</summary>
+        <div class="tbl-wrap" style="margin-top:12px"><table id="m-staging"></table></div>
+      </details>
+    </div>
+  </section>
+
+  <!-- 待审核：需要人拍板的事项，按钮转调 mem CLI -->
+  <section class="view" id="v-review">
+    <div class="card">
+      <h2>待审核 <small>按钮会真的执行：转正 / 归档 / 合入走 mem 子命令，拒绝 / 捞回是在 staging 里挪文件</small></h2>
+      <div class="form">
+        <button class="btn" id="rv-sync" title="对账 + 增量索引 L1 + 规整队列；不提交 git">收口：mem sync</button>
+        <button class="btn ghost" id="rv-reload">重新读取</button>
+        <span class="muted" id="rv-summary" style="font-size:13px"></span>
+      </div>
+      <div class="note">建议顺序：① 审 staging 候选（拒掉不要的，再合入整批）→ ② 抽查待转正 → ③ 归档过期任务 → ④ 点「收口」让索引跟上。提交 git 仍在终端用 <span class="mono">mem sync --commit</span>。</div>
+    </div>
+    <div id="rv-out"></div>
+    <div class="card"><h2>① staging 候选 <small id="rv-c-note"></small></h2><div id="rv-cands"></div></div>
+    <div class="card"><h2>② 待转正 <small>mem audit 自动放行，已进库、能召回，但不进开场注入，等你抽查</small></h2><div id="rv-auto"></div></div>
+    <div class="card"><h2>③ 过期任务记忆 <small id="rv-stale-note"></small></h2><div id="rv-stale"></div></div>
+    <div class="grid2">
+      <div class="card"><h2>④ 一致性问题 <small>mem lint</small></h2><div id="rv-lint"></div></div>
+      <div class="card"><h2>⑤ 未提交的记忆改动 <small>git status</small></h2><div id="rv-git"></div></div>
+    </div>
+  </section>
+
+  <!-- 关于：为什么有这个项目、为什么这么选型。内容摘自 DESIGN.md，数字从概览接口实时填 -->
+  <section class="view" id="v-about">
+    <div class="toc">
+      <a class="chip" href="#about" data-jump="ab-why">为什么要有它</a>
+      <a class="chip" href="#about" data-jump="ab-layers">三层事实源</a>
+      <a class="chip" href="#about" data-jump="ab-flow">一次检索怎么走</a>
+      <a class="chip" href="#about" data-jump="ab-design">关键设计</a>
+      <a class="chip" href="#about" data-jump="ab-table">选型总表</a>
+      <a class="chip" href="#about" data-jump="ab-scale">规模与边界</a>
+    </div>
+
+    <div class="card prose" id="ab-why">
+      <h2>为什么要有它</h2>
+      <p class="lead">Agent 每天都在产生经验，但下一次会话什么都不记得。这个项目要补的不是「存」，而是<b>「找」</b>：
+        把散在各处的记忆、知识和历史会话，变成一条命令就能查到的东西。</p>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>类型</th><th>例子</th><th>没有它的时候</th></tr></thead>
+        <tbody>
+          <tr><td>协作记忆</td><td>「提交前先跑 lint，别等 CI 挂」</td><td>散在各 project 目录，跨项目不共享，每次重新纠偏</td></tr>
+          <tr><td>领域知识</td><td>踩坑页、SOP、改动记录</td><td>攒在笔记目录里，只能靠人翻</td></tr>
+          <tr><td>历史会话</td><td>「上次那个缓存问题怎么绕的」</td><td>埋在几千个 jsonl 里，grep 不动</td></tr>
+        </tbody>
+      </table></div>
+      <h3>定位：统一检索层，不是又一个笔记系统</h3>
+      <ul>
+        <li><b>事实源原样、原地不动</b>：Markdown 和会话文件该在哪还在哪，依赖现有路径的笔记软件和流水线都不受影响。</li>
+        <li><b>索引是派生物</b>：<code>.index/memory.db</code> 随时能删掉用 <code>mem index --full</code> 重建。</li>
+        <li><b>写入要过人眼</b>：模型起草的记忆一律先进 staging，审核后才合入——写错的记忆比没有记忆更糟。</li>
+        <li><b>全本地、离线</b>：库里是业务内容和会话原文，不能出网。</li>
+      </ul>
+      <h3>刻意不做的事</h3>
+      <p class="muted">不做知识图谱、不做自动摘要、不做常驻服务、不做多机同步。一个 CLI，冷启动不到 1 秒出结果，够用。这个看板也是按需启动的；它不直接写库，审核页的操作一律转调 mem 命令。</p>
+    </div>
+
+    <div class="card prose" id="ab-layers">
+      <h2>三层事实源 <small>块数为当前索引实时值</small></h2>
+      <div class="layers3">
+        <div class="layer-card" style="--c:var(--l1)">
+          <h4>L1 协作记忆</h4><div class="n" data-layer-n="L1">—</div>
+          <p>用户偏好、纠偏、项目约束、外部资源指针。<code>memory/</code> 下的 Markdown，人工审核后合入；
+            索引页 <code>MEMORY.md</code> 是唯一在开场注入上下文的文件。</p>
+        </div>
+        <div class="layer-card" style="--c:var(--l2)">
+          <h4>L2 领域知识</h4><div class="n" data-layer-n="L2">—</div>
+          <p>知识库、踩坑、SOP、改动记录、协作复盘。<b>原地只读</b>索引你在 <code>config.json</code> 的 <code>sources</code> 里配置的笔记目录，不搬家——
+            搬家会打断其他依赖现路径的工具。</p>
+        </div>
+        <div class="layer-card" style="--c:var(--l3)">
+          <h4>L3 历史会话</h4><div class="n" data-layer-n="L3">—</div>
+          <p>Claude Code / Codex 的会话。默认按「一问一答」回合切分进索引；也可以从 <code>sources</code>
+            去掉会话源，只靠 <code>mem review</code> 把会话起草成候选记忆、人审后合入 L1（取舍见下方「关键设计 7」）。
+            会话结束时只记一个指针，原文始终留在 transcript 里。</p>
+        </div>
+      </div>
+      <p class="note" id="ab-layer-note"></p>
+    </div>
+
+    <div class="card prose" id="ab-flow">
+      <h2>一次检索怎么走</h2>
+<pre class="diagram">事实源  L1 memory/**.md · L2 &lt;笔记目录&gt;/**.md · L3 *.jsonl（可选；另一路：会话 → mem review → 人审 → L1）
+   │
+   ├─ 脱敏   redact.py   路径跳过 + 正则打码（索引时做，改规则要全量重建）
+   ├─ 切块   chunk.py    按 Markdown 标题层级切，约 600 字一块，标题路径拼进嵌入文本
+   └─ 嵌入   embed.py    文本 → 512 维向量（本地 ONNX，CPU）
+   ▼
+.index/memory.db   chunks 正文 · chunks_fts trigram 倒排 · vectors 向量 · meta_vec 全局均值
+   ▼
+┌──── 关键词腿 ─────────────┐   ┌──── 语义腿 ────────────┐
+│ 查询按 3 字逐字滑动切片   │   │ 查询 → 512 维向量      │
+│ → 按 df 丢掉垃圾和废词    │   │ → 减全局均值再归一化   │
+│ → FTS5 匹配 → bm25 排序   │   │ → 全库余弦 → 取前 30   │
+└────────────┬──────────────┘   └───────────┬────────────┘
+             └──────── RRF 名次融合 ─────────┘
+                           ▼
+          top-k（标注 K / V，L1/L2 有保底席位）</pre>
+      <p class="note">「搜索」页的三种模式就是把这两条腿拆开给你看；「关键词」页的拆词表就是关键词腿的 df 过滤过程。</p>
+    </div>
+
+    <div class="card prose" id="ab-design">
+      <h2>关键设计：为什么这么定</h2>
+      <div class="why">
+        <div>
+          <h4>1. 必须两条腿</h4>
+          <p><b>精确标识</b>（表名、工单号、类名如 <code>RetryTemplate</code>）：嵌入模型没见过，向量基本是噪声，只能靠关键词。</p>
+          <p><b>自然语言问法</b>（「这个接口为什么偶尔超时」）：原文可能一个字都对不上，只能靠语义。</p>
+          <p class="muted">砍掉任何一条，都有一整类查询直接报废。</p>
+        </div>
+        <div>
+          <h4>2. 中文用 trigram，而且必须逐字滑动</h4>
+          <p>FTS5 默认分词器不切中文，整句一个词等于不可用。trigram 每 3 字切一刀，<b>不依赖词典</b>，业务黑话照样命中。</p>
+<pre class="diagram">"日志检索超时重试"
+stride=3: 日志检 / 索超时 / 重试      ← 跨词碎片，命中恒为 0
+stride=1: 日志检 / 志检索 / 检索超 / 索超时 / 超时重 / 时重试
+          ✓ 真实词片一定在候选里</pre>
+          <p>候选变多后再用 <b>df 过滤</b>：零命中的丢掉、出现在 25% 以上块里的丢掉，剩下按稀有度取前 12 个。随库内容自适应，不用维护停用词表。</p>
+        </div>
+        <div>
+          <h4>3. 减全局均值：语义腿能不能用的分水岭</h4>
+          <p>bge 类模型有「各向异性」：所有向量挤在一个窄锥里。实测不处理时全库相似度落在 0.64~0.72，最相关和毫不相关只差 0.05。</p>
+          <p>索引时算一次全库平均向量，检索时两边都减掉再归一化，窄锥被拉开，排序才有意义。成本只有两次减法。</p>
+        </div>
+        <div>
+          <h4>4. RRF：只看名次，不看分数</h4>
+          <p>bm25 没有上界，余弦在 -1~1，两个分数不可比，直接相加没有意义。RRF 扔掉分数，只用名次：<code>Σ 1/(60 + 名次)</code>。</p>
+<pre class="diagram">块  关键词名次  语义名次   得分
+A   第 1        没捞到     1/61        = 0.0164
+B   第 5        第 3       1/65 + 1/63 = 0.0313  ← 两条腿都认，反超
+C   没捞到      第 1       1/61        = 0.0164</pre>
+        </div>
+        <div>
+          <h4>5. 按标题切块，标题拼进嵌入文本</h4>
+          <p>检索单位是块不是文件：一篇 5000 字的踩坑页里可能记了七八件事。块太大，向量被平均成四不像；太小又丢上下文。</p>
+          <p>一个只写着「改成 3 就行了」的块没有可检索的语义；嵌入时拼上 <code>缓存不失效踩坑 / 排查 / 并发度</code>，向量才落在正确的位置。展示仍用原文。</p>
+        </div>
+        <div>
+          <h4>6. 分层保底席位</h4>
+          <p>L1 只占全库约 <span data-l1-pct>—</span> 的块，等权排序下几乎永远进不了 top-k——一条精确的记忆会被几十条沾边的知识页压掉（会话层停用前更严重）。</p>
+          <p>所以没限定层时给 L1/L2 留几个席位，席位要么关键词命中、要么语义分过阈值（0.30），避免凑数。</p>
+        </div>
+        <div>
+          <h4>7. 会话层：索引还是只提炼</h4>
+          <p>会话增长最快。实测一台机器用了一个多月后，会话占到全库约八成的块，其中大头是固定的自动化任务模板、
+            <code>&lt;task-notification&gt;</code>、<code>&lt;skill&gt;</code> 等系统注入，以及「继续」「是的」这类无信息量的回合。
+            现有过滤只按会话来源筛，不看内容，挡不住这些。</p>
+          <p>可以选择不索引会话：有复用价值的结论本来就该进 L1 并过人审，<code>mem review</code> 已经在做；代价是没被提炼的结论查不到，只能按 session id 回 transcript 找。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card prose" id="ab-table">
+      <h2>选型总表</h2>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>决策点</th><th>选中</th><th>没选的</th><th>理由</th></tr></thead>
+        <tbody>
+          <tr><td>存储</td><td><b>SQLite</b>（FTS5 + BLOB）</td><td class="muted">Chroma / LanceDB / Qdrant</td><td>零部署、无常驻进程、单文件可删可重建；向量库要么带服务要么带一堆依赖</td></tr>
+          <tr><td>向量检索</td><td><b>numpy 暴力余弦</b></td><td class="muted">sqlite-vec、faiss、HNSW</td><td>这个量级一次矩阵乘就跑完，比加载 C 扩展还快；近似检索（ANN）在这里是纯负收益</td></tr>
+          <tr><td>中文分词</td><td><b>FTS5 trigram</b></td><td class="muted">jieba + unicode61</td><td>零依赖、不依赖词典、生造词照样命中；jieba 还要保证索引和查询的分词版本严格一致</td></tr>
+          <tr><td>嵌入模型</td><td><b>本地 ONNX bge-small-zh-v1.5</b></td><td class="muted">API 嵌入、bge-large / m3</td><td>内容不能出网，API 还按量计费；大模型大 4~8 倍，这个量级召回收益看不出来；库里 95% 是中文，英文标识符交给关键词腿</td></tr>
+          <tr><td>各向异性</td><td><b>减全局均值</b></td><td class="muted">完整 whitening、不处理</td><td>不处理排不出序；完整 whitening 要多存 512×512 矩阵，收益边际</td></tr>
+          <tr><td>融合</td><td><b>RRF 等权</b></td><td class="muted">归一化加权、单腿</td><td>分数不可比；加权关键词实测反而变差</td></tr>
+          <tr><td>重排</td><td><b>不做</b></td><td class="muted">cross-encoder reranker</td><td>多一个模型、多 200 ms+ 延迟，top-8 场景收益不明显，留作后续</td></tr>
+          <tr><td>事实源</td><td><b>Markdown 原地不动</b></td><td class="muted">全量导入统一库</td><td>笔记目录往往还被笔记软件、扫描流水线等依赖现路径</td></tr>
+          <tr><td>自动写入</td><td><b>一律落 staging</b></td><td class="muted">直接写事实源</td><td>模型起草的记忆必须过人眼</td></tr>
+          <tr><td>跨平台</td><td><b>WSL2 单一事实源 + 单向导出</b></td><td class="muted">两套运行时、双向同步</td><td>双向同步必然冲突；Windows 侧读导出的只读副本</td></tr>
+          <tr><td>运行时</td><td><b>独立 venv（Python 3.13）</b></td><td class="muted">系统 python3</td><td>系统 python 常缺 fastembed / numpy，任何 fallback 都会静默退化成「查不到也不报错」</td></tr>
+          <tr><td>会话层</td><td><b>默认回合级索引，可关闭只提炼</b></td><td class="muted">前缀黑名单去噪</td><td>会话增长最快且混有大量模板 / 系统注入；黑名单要随注入格式不停追加，关闭则交给 mem review 提炼</td></tr>
+          <tr><td>本看板</td><td><b>标准库 http.server + 单文件页面</b></td><td class="muted">FastAPI、前端框架</td><td>不给记忆库加依赖；复用 venv 和现有检索代码；只读、只监听本机</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+
+    <div class="card prose" id="ab-scale">
+      <h2>当前规模与设计边界 <small>实时</small></h2>
+      <div id="ab-gauges"></div>
+      <h3>什么时候该推翻这套设计</h3>
+      <ul>
+        <li>块数超过 <b>10 万</b>：numpy 暴力检索开始吃力，换 sqlite-vec 或 HNSW（配置里的 <code>index.backend</code>）。</li>
+        <li>需要<b>多机共享</b>：SQLite 单文件 + 同步会冲突，得上服务端。</li>
+        <li>需要<b>结构化查询</b>（「上周所有关于 XX 的改动」）：现在只有全文和语义两条腿，元数据都在 <code>meta_json</code> 里没建索引。</li>
+      </ul>
+      <h3>已知边界</h3>
+      <ul>
+        <li><b>没有时间衰减</b>：三年前和昨天的结论一视同仁，L2 靠 <code>verified_at</code> / <code>status: stale</code> 人工兜底。</li>
+        <li><b>只按文档去重</b>：同一件事在 L1 记一遍、L2 又写一遍，仍会各占一个结果位。</li>
+        <li><b>查不到会话原文</b>：没被提炼成记忆的结论检索不到。</li>
+        <li><b>没有重排</b>：top-8 里通常有 1~2 条语义腿捞来的擦边球。</li>
+        <li><b>增量索引按 mtime</b>：<code>touch</code> 会触发重新嵌入，内容改了但 mtime 没变会漏；有疑虑就 <code>--full</code>。</li>
+        <li><b>L2 是线索不是事实</b>：与当前代码、配置、数据库冲突时以现状为准。</li>
+      </ul>
+      <p class="note">完整推导、术语速查、参数手册和排查手册见 <code id="ab-design-path">DESIGN.md</code>；也可以在「搜索」里查「为什么用 trigram」——设计文档本身就在索引里。</p>
+    </div>
+  </section>
+</main>
+
+<dialog id="doc">
+  <div class="dh"><h3 id="doc-title"></h3><div id="doc-meta" class="muted mono" style="font-size:12px"></div><button class="x" id="doc-x" aria-label="关闭">×</button></div>
+  <div class="db" id="doc-body"></div>
+</dialog>
+
+<script>
+"use strict";
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k === "class") el.className = v;
+    else if (k === "style") el.style.cssText = v;
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v);
+  }
+  for (const c of kids.flat()) {
+    if (c == null || c === false) continue;
+    el.append(c instanceof Node ? c : String(c));
+  }
+  return el;
+}
+const fill = (el, ...kids) => { el.replaceChildren(...kids.flat().filter(k => k != null && k !== false)); return el; };
+
+async function api(path, params = {}) {
+  const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== "" && v != null));
+  const res = await fetch(path + (qs.toString() ? "?" + qs : ""));
+  const data = await res.json();
+  if (!res.ok || data.error) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+const nf = new Intl.NumberFormat("zh-CN");
+const fmtN = n => n == null ? "—" : nf.format(n);
+function fmtBytes(b) {
+  if (b == null) return "—";
+  const u = ["B", "KB", "MB", "GB"]; let i = 0;
+  while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
+  return (i ? b.toFixed(b < 10 ? 1 : 0) : b) + " " + u[i];
+}
+const fmtWan = n => n >= 10000 ? (n / 10000).toFixed(1) + " 万" : fmtN(n);
+const pct = (a, b) => b ? (a / b * 100).toFixed(a / b < .01 ? 2 : 1) + "%" : "—";
+function fmtTime(sec) {
+  if (!sec) return "—";
+  const d = new Date(sec * 1000);
+  const p = x => String(x).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function ago(sec) {
+  if (!sec) return "";
+  const m = Math.round((Date.now() / 1000 - sec) / 60);
+  if (m < 60) return `${m} 分钟前`;
+  if (m < 60 * 48) return `${Math.round(m / 60)} 小时前`;
+  return `${Math.round(m / 1440)} 天前`;
+}
+const LAYER_NAME = { L1: "L1 记忆", L2: "L2 知识", L3: "L3 会话" };
+const layerBadge = l => h("span", { class: "badge b-" + l }, l);
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+// 把检索实际用到的词标黄。所有文本都走 textNode，不拼 innerHTML
+function highlight(text, terms) {
+  const frag = document.createDocumentFragment();
+  const ts = [...new Set((terms || []).filter(t => t && t.length >= 2))].sort((a, b) => b.length - a.length);
+  if (!ts.length) { frag.append(text); return frag; }
+  const re = new RegExp(ts.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "gi");
+  let last = 0, m;
+  while ((m = re.exec(text))) {
+    if (m.index > last) frag.append(text.slice(last, m.index));
+    frag.append(h("mark", null, m[0]));
+    last = m.index + m[0].length;
+  }
+  frag.append(text.slice(last));
+  return frag;
+}
+const ftsTerms = q => [...(q || "").matchAll(/"((?:[^"]|"")*)"/g)].map(m => m[1].replace(/""/g, '"'));
+
+// ---------------------------------------------------------------- tabs
+const loaded = {};
+function showTab(name) {
+  if (!document.getElementById("v-" + name)) name = "overview";
+  $$("nav.tabs a").forEach(a => a.classList.toggle("on", a.dataset.tab === name));
+  $$("section.view").forEach(s => s.classList.toggle("on", s.id === "v-" + name));
+  if (!loaded[name]) { loaded[name] = true; LOADERS[name] && LOADERS[name](); }
+}
+window.addEventListener("hashchange", () => showTab(location.hash.slice(1).split("?")[0]));
+function goTab(name) { if (location.hash !== "#" + name) location.hash = name; else showTab(name); }
+
+function segValue(seg) { return $("button.on", seg).dataset.v; }
+function bindSeg(seg, onChange) {
+  seg.addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    $$("button", seg).forEach(x => x.classList.toggle("on", x === b));
+    onChange && onChange(b.dataset.v);
+  });
+}
+function setSeg(seg, v) { $$("button", seg).forEach(x => x.classList.toggle("on", x.dataset.v === v)); }
+
+// ---------------------------------------------------------------- overview
+let OV = null;
+async function loadOverview() {
+  try { OV = await api("/api/overview"); } catch (e) { fill($("#ov-kpis"), h("div", { class: "err" }, "加载失败：" + e.message)); return; }
+  renderOverview(OV);
+  renderAbout(OV);
+  fillScopeSelect();
+}
+
+function renderOverview(o) {
+  $("#hdr-info").textContent = `上次索引 ${fmtTime(o.last_index_at)}（${ago(o.last_index_at)}） · ${o.embedding_model}`;
+  fill($("#ov-banner"), o.last_semantic_error ? h("div", { class: "banner" }, "上次语义检索出错（已退化为纯关键词）：" + o.last_semantic_error) : null);
+
+  const t = o.totals, f = o.files, bl = o.backlog;
+  const kpi = (k, v, d) => h("div", { class: "kpi" }, h("div", { class: "k" }, k), h("div", { class: "v" }, v), d ? h("div", { class: "d" }, d) : null);
+  fill($("#ov-kpis"),
+    kpi("块", fmtN(t.chunks), `平均 ${Math.round(t.chars / Math.max(t.chunks, 1))} 字/块`),
+    kpi("文档", fmtN(t.docs)),
+    kpi("正文字符", fmtWan(t.chars)),
+    kpi("索引库", fmtBytes(f.db), f.wal ? "WAL " + fmtBytes(f.wal) : "memory.db"),
+    kpi("模型缓存", fmtBytes(f.models), "运行时 " + fmtBytes(f.venv)),
+    kpi("待审候选", fmtN(bl.staging_files), `${bl.staging_runs} 个批次`),
+    kpi("待抽取会话", fmtN(bl.queue.pending || 0), "pending"),
+  );
+
+  // 层占比
+  const layers = {};
+  o.by_source.forEach(r => { layers[r.layer] = (layers[r.layer] || 0) + r.chunks; });
+  fill($("#ov-layer-stack"), Object.entries(layers).map(([l, n]) =>
+    h("i", { style: `width:${n / t.chunks * 100}%;background:${css("--" + l.toLowerCase())}`, title: `${l} ${fmtN(n)} 块` })));
+  fill($("#ov-layer-legend"), Object.entries(layers).map(([l, n]) =>
+    h("span", { style: `--c:${css("--" + l.toLowerCase())}` }, `${LAYER_NAME[l] || l}  ${fmtN(n)} 块 · ${pct(n, t.chunks)}`)));
+
+  const maxC = Math.max(...o.by_source.map(r => r.chunks));
+  fill($("#ov-sources"),
+    h("thead", null, h("tr", null, h("th", null, "层"), h("th", null, "来源"), h("th", { class: "num" }, "文档"),
+      h("th", { class: "num" }, "块"), h("th", { class: "num" }, "占比"), h("th", { class: "num" }, "字符"),
+      h("th", { class: "num" }, "平均/最长"), h("th", { style: "width:22%" }, ""))),
+    h("tbody", null, o.by_source.map(r => h("tr", { class: "click", title: "看这个来源的热词", onclick: () => openHot(r.source) },
+      h("td", null, layerBadge(r.layer)), h("td", { class: "mono" }, r.source),
+      h("td", { class: "num" }, fmtN(r.docs)), h("td", { class: "num" }, fmtN(r.chunks)),
+      h("td", { class: "num muted" }, pct(r.chunks, t.chunks)), h("td", { class: "num" }, fmtWan(r.chars)),
+      h("td", { class: "num muted" }, `${r.avg_len} / ${r.max_len}`),
+      h("td", null, h("div", { class: "bar" }, h("i", { style: `width:${r.chunks / maxC * 100}%;background:${css("--" + r.layer.toLowerCase())}` })))))));
+
+  // 磁盘占用
+  $("#ov-dbpath").textContent = o.db_path;
+  const palette = ["--l1", "--l2", "--l3", "--bad", "--faint", "--muted"].map(css);
+  const tblTotal = o.tables.reduce((s, x) => s + x.bytes, 0);
+  fill($("#ov-table-stack"), o.tables.map((x, i) => h("i", { style: `width:${x.bytes / tblTotal * 100}%;background:${palette[i % palette.length]}`, title: x.group })));
+  fill($("#ov-table-legend"), o.tables.length
+    ? o.tables.map((x, i) => h("span", { style: `--c:${palette[i % palette.length]}` }, `${x.group} ${fmtBytes(x.bytes)} · ${pct(x.bytes, tblTotal)}`))
+    : h("span", { class: "muted" }, "当前 sqlite 未编译 dbstat，只显示文件大小"));
+  const rows = [
+    ["索引库 memory.db", f.db, "派生物，可删掉重建"], ["WAL", f.wal, ""],
+    ["嵌入模型 .index/models", f.models, ""], ["运行时 .index/.venv", f.venv, ""],
+    ["L1 正式记忆 memory/", f.memory, "事实源"], ["staging/", f.staging, "待审候选"],
+  ];
+  fill($("#ov-files"), h("tbody", null, rows.map(([k, v, d]) =>
+    h("tr", null, h("td", null, k), h("td", { class: "num" }, fmtBytes(v)), h("td", { class: "faint" }, d)))));
+
+  // 块长度分布
+  const maxH = Math.max(...o.hist.map(x => x.n), 1);
+  $("#ov-hist-note").textContent = `共 ${fmtN(t.chunks)} 块`;
+  fill($("#ov-hist"), o.hist.map(x => h("div", { class: "col", title: `${x.from}–${x.from + 99} 字：${fmtN(x.n)} 块` },
+    h("b", null, x.n >= 1000 ? (x.n / 1000).toFixed(1) + "k" : x.n),
+    h("i", { style: `height:${x.n / maxH * 100}%` }),
+    h("span", null, x.from >= 1000 ? (x.from / 1000) + "k" : x.from))));
+
+  const Q = { pending: "待抽取", drafted: "已起草", "draft-child": "子会话", missing: "会话文件已不在", "too-short": "太短跳过", promoted: "已合入" };
+  fill($("#ov-backlog"),
+    h("div", { class: "tbl-wrap" }, h("table", null, h("tbody", null,
+      h("tr", null, h("td", null, "staging 批次 / 候选"), h("td", { class: "num" }, `${bl.staging_runs} / ${fmtN(bl.staging_files)}`),
+        h("td", null, h("button", { class: "btn ghost small", onclick: () => { goTab("memory"); $("#m-staging-box").open = true; } }, "查看"))),
+      Object.entries(bl.queue).map(([k, v]) => h("tr", null, h("td", null, `队列 · ${Q[k] || k}`, h("span", { class: "faint mono" }, `  ${k}`)), h("td", { class: "num" }, fmtN(v)), h("td")))))),
+    h("div", { class: "note" }, "处理：mem review → mem audit → mem promote，收口 mem sync。看板只读，不执行这些命令。"));
+
+  const mt = o.memory_types, mtTotal = Object.values(mt).reduce((a, b) => a + b, 0);
+  fill($("#ov-memtypes"),
+    h("div", { class: "tbl-wrap" }, h("table", null, h("tbody", null, Object.entries(mt).sort((a, b) => b[1] - a[1]).map(([k, v]) =>
+      h("tr", { class: "click", onclick: () => { memType = k; goTab("memory"); renderMemories(); } },
+        h("td", { class: "mono" }, k), h("td", { class: "num" }, v),
+        h("td", { style: "width:50%" }, h("div", { class: "bar" }, h("i", { style: `width:${v / mtTotal * 100}%` })))))))),
+    h("div", { class: "note" }, `共 ${mtTotal} 条，点一行去记忆条目页筛选。`));
+}
+
+// ---------------------------------------------------------------- search
+async function doSearch() {
+  const q = $("#s-q").value.trim();
+  if (!q) return;
+  const mode = segValue($("#s-mode"));
+  const params = { q, mode, layer: $("#s-layer").value, k: $("#s-k").value };
+  try { history.replaceState(null, "", "#search?" + new URLSearchParams({ q, mode })); } catch (_) {}
+  fill($("#s-results"), h("div", { class: "loading" }, mode === "keyword" ? "检索中…" : "检索中…（首次语义检索要加载模型，稍等一两秒）"));
+  fill($("#s-info"));
+  let r;
+  try { r = await api("/api/search", params); }
+  catch (e) { fill($("#s-results"), h("div", { class: "err" }, "检索失败：" + e.message)); return; }
+  const terms = ftsTerms(r.fts_query);
+  fill($("#s-info"),
+    h("span", null, `${r.items.length} 条 · ${r.ms} ms`),
+    r.stats ? h("span", null, `关键词候选 ${r.stats.lexical} · 语义候选 ${r.stats.semantic}`) : null,
+    h("span", null, "关键词腿实际用词：", terms.length ? h("span", { class: "terms" }, terms.map(t => h("code", null, t))) : h("span", { class: "faint" }, "无（全部片段零命中或太常见）")));
+  if (!r.items.length) { fill($("#s-results"), h("div", { class: "empty" }, "没有命中")); return; }
+  fill($("#s-results"), r.items.map((it, i) => resultCard(it, i + 1, terms)));
+  // 没被截断的短块不需要「展开」
+  $$("#s-results .result").forEach(el => {
+    const b = $(".text", el);
+    if (b.scrollHeight <= b.clientHeight + 4) { b.classList.remove("clamp"); $(".tg", el).remove(); }
+  });
+}
+
+function locLine(it) {
+  const m = it.meta || {};
+  if (m.session_id) return `${m.agent || ""} session ${m.session_id} · ${m.timestamp || ""}${m.cwd ? " · " + m.cwd : ""}`;
+  return it.path;
+}
+
+function resultCard(it, rank, terms) {
+  const body = h("div", { class: "text clamp" }, highlight(it.text, terms));
+  const toggle = h("button", { class: "btn ghost small tg", onclick: () => {
+    const c = body.classList.toggle("clamp"); toggle.textContent = c ? "展开" : "收起";
+  } }, "展开");
+  const m = it.meta || {};
+  return h("div", { class: "result" },
+    h("div", { class: "hd" },
+      h("span", { class: "rank" }, "#" + rank), layerBadge(it.layer), h("span", { class: "muted mono" }, it.source),
+      [...(it.via || "")].map(v => h("span", { class: "badge b-" + v, title: v === "K" ? "关键词腿命中" : "语义腿命中" }, v)),
+      it.sim != null ? h("span", { class: "faint", title: "去均值后的余弦相似度" }, "sim " + it.sim.toFixed(3)) : null,
+      ["stale", "archived", "auto"].includes(m.status) ? h("span", { class: "badge b-warn" }, m.status) : null,
+      h("span", { class: "title" }, it.title || ""), it.heading && it.heading !== it.title ? h("span", { class: "muted" }, "› " + it.heading) : null),
+    h("div", { class: "loc" }, locLine(it)),
+    body,
+    h("div", { class: "ft" }, toggle, it.doc_id ? h("button", { class: "btn ghost small", onclick: () => openDoc(it.doc_id, it.id, terms) }, "看整篇") : null));
+}
+
+// ---------------------------------------------------------------- keyword
+async function analyzeTerm(t) {
+  t = (t ?? $("#t-q").value).trim();
+  if (!t) return;
+  $("#t-q").value = t;
+  try { history.replaceState(null, "", "#keyword?" + new URLSearchParams({ t })); } catch (_) {}
+  fill($("#t-out"), h("div", { class: "loading" }, "统计中…"));
+  let r;
+  try { r = await api("/api/term", { t }); } catch (e) { fill($("#t-out"), h("div", { class: "err" }, e.message)); return; }
+  const ST = { kept: ["保留", "b-ok"], zero: ["零命中，丢弃", "b-gray"], common: [`太常见（>${r.max_df_ratio * 100}%），丢弃`, "b-warn"] };
+  const maxC = Math.max(...r.dist.map(x => x.chunks), 1);
+  fill($("#t-out"),
+    h("div", { class: "meta-line" },
+      h("span", null, "字面出现在 ", h("b", null, fmtN(r.hits)), ` 个块中（占全库 ${pct(r.hits, r.total)}，不区分英文大小写）`)),
+    r.dist.length ? h("div", { class: "tbl-wrap" }, h("table", null,
+      h("thead", null, h("tr", null, h("th", null, "层"), h("th", null, "来源"), h("th", { class: "num" }, "块"), h("th", { class: "num" }, "文档"), h("th", { style: "width:40%" }))),
+      h("tbody", null, r.dist.map(x => h("tr", null, h("td", null, layerBadge(x.layer)), h("td", { class: "mono" }, x.source),
+        h("td", { class: "num" }, fmtN(x.chunks)), h("td", { class: "num" }, fmtN(x.docs)),
+        h("td", null, h("div", { class: "bar" }, h("i", { style: `width:${x.chunks / maxC * 100}%;background:${css("--" + x.layer.toLowerCase())}` })))))))) : h("div", { class: "empty" }, "全库没有出现"),
+    h("h2", { style: "font-size:13px;margin:18px 0 8px" }, "检索时的拆词 ", h("small", { class: "muted", style: "font-weight:400" },
+      `英文/标识符整段保留，中文按 3 字滑窗切片；每个片段按命中块数筛选，最多取最稀有的 ${r.max_terms} 个`)),
+    r.pieces.length ? h("div", { class: "tbl-wrap" }, h("table", null,
+      h("thead", null, h("tr", null, h("th", null, "片段"), h("th", { class: "num" }, "命中块"), h("th", { class: "num" }, "占比"), h("th", null, "结果"))),
+      h("tbody", null, r.pieces.map(p => h("tr", null, h("td", { class: "mono" }, p.term), h("td", { class: "num" }, fmtN(p.chunks)),
+        h("td", { class: "num muted" }, pct(p.chunks, r.total)), h("td", null, h("span", { class: "badge " + ST[p.status][1] }, ST[p.status][0])))))))
+      : h("div", { class: "note" }, "这个词拆不出可用片段（中文不足 3 字、英文不足 3 个字符），关键词腿用不上它，只能靠语义腿。"),
+    h("div", { class: "meta-line" }, "最终 FTS 查询：", r.fts_query ? h("code", { class: "mono" }, r.fts_query) : h("span", { class: "faint" }, "空")));
+}
+
+async function loadHot() {
+  const params = { scope: $("#h-scope").value, kind: segValue($("#h-kind")), limit: $("#h-limit").value, hide_common: $("#h-hide").checked ? "1" : "0" };
+  fill($("#h-out"), h("div", { class: "loading" }, "统计中…（首次统计全库要一两秒，之后走缓存）"));
+  let r;
+  try { r = await api("/api/hotwords", params); } catch (e) { fill($("#h-out"), h("div", { class: "err" }, e.message)); return; }
+  $("#h-note").textContent = `${fmtN(r.chunks)} 个块 · 统计耗时 ${r.ms} ms · df 超过 ${r.max_df_ratio * 100}% 的高频词 ${r.n_common} 个${$("#h-hide").checked ? "（已隐藏）" : ""}`;
+  if (!r.words.length) { fill($("#h-out"), h("div", { class: "empty" }, "没有可统计的词")); return; }
+  fill($("#h-out"), h("div", { class: "chips" }, r.words.map(w =>
+    h("button", { class: "chip" + (w.common ? " common" : ""), title: `出现在 ${w.df} 个块中（${pct(w.df, r.chunks)}）${w.common ? "，检索时会被丢弃" : ""}`, onclick: () => { analyzeTerm(w.w); window.scrollTo({ top: 0, behavior: "smooth" }); } },
+      w.w, h("em", null, fmtN(w.df))))));
+}
+
+function fillScopeSelect() {
+  if (!OV) return;
+  const sel = $("#h-scope"), cur = sel.value;
+  fill(sel, h("option", { value: "all" }, "全部来源"),
+    ["L1", "L2", "L3"].filter(l => OV.by_source.some(r => r.layer === l)).map(l => h("option", { value: l }, LAYER_NAME[l])),
+    OV.by_source.map(r => h("option", { value: r.source }, `${r.layer} · ${r.source}`)));
+  sel.value = [...sel.options].some(o => o.value === cur) ? cur : "all";
+}
+
+function openHot(source) {
+  goTab("keyword");
+  $("#h-scope").value = source;
+  loadHot();
+}
+
+// ---------------------------------------------------------------- memory
+let MEM = null, memType = "";
+async function loadMemories() {
+  try { MEM = await api("/api/memories"); } catch (e) { fill($("#m-table"), h("tbody", null, h("tr", null, h("td", { class: "err" }, e.message)))); return; }
+  renderMemories();
+  renderStaging();
+}
+
+const STATUS = { "": ["正常", "b-ok"], auto: ["auto 待转正", "b-warn"], archived: ["已归档", "b-gray"], stale: ["过时", "b-warn"] };
+function renderMemories() {
+  if (!MEM) return;
+  const counts = {};
+  MEM.items.forEach(m => { counts[m.type] = (counts[m.type] || 0) + 1; });
+  fill($("#m-types"),
+    h("button", { class: "chip" + (memType ? "" : " on"), onclick: () => { memType = ""; renderMemories(); } }, "全部", h("em", null, MEM.items.length)),
+    Object.keys(counts).sort().map(t => h("button", { class: "chip" + (memType === t ? " on" : ""), onclick: () => { memType = t; renderMemories(); } }, t, h("em", null, counts[t]))));
+  const q = $("#m-q").value.trim().toLowerCase(), st = $("#m-status").value;
+  const list = MEM.items.filter(m =>
+    (!memType || m.type === memType) &&
+    (!st || (st === "-" ? !m.status : m.status === st)) &&
+    (!q || (m.name + " " + m.description).toLowerCase().includes(q)))
+    .sort((a, b) => b.mtime - a.mtime);
+  fill($("#m-table"),
+    h("thead", null, h("tr", null, h("th", null, "type"), h("th", null, "name / 描述"), h("th", null, "创建"), h("th", null, "状态"), h("th", { class: "num" }, "块"), h("th", { class: "num" }, "大小"))),
+    h("tbody", null, list.length ? list.map(m => {
+      const s = STATUS[m.status] || [m.status, "b-gray"];
+      return h("tr", { class: "click", onclick: () => openDoc(m.path, null, q ? [q] : []) },
+        h("td", { class: "mono" }, m.type),
+        h("td", null, h("div", { class: "mono" }, m.name), h("div", { class: "muted", style: "font-size:12.5px" }, highlight(m.description, q ? [q] : []))),
+        h("td", { class: "num muted" }, m.created || "—"),
+        h("td", null, h("span", { class: "badge " + s[1] }, s[0])),
+        h("td", { class: "num" }, m.chunks == null ? h("span", { class: "badge b-bad", title: "跑 mem sync 进索引" }, "未索引") : m.chunks),
+        h("td", { class: "num muted" }, fmtBytes(m.bytes)));
+    }) : h("tr", null, h("td", { colspan: 6, class: "empty" }, "没有匹配的条目"))));
+}
+
+function renderStaging() {
+  const s = MEM.staging, runs = new Set(s.map(x => x.run));
+  $("#m-staging-sum").textContent = `staging 待审候选：${s.length} 条 / ${runs.size} 个批次（只看不改，处理用 mem audit / mem promote）`;
+  fill($("#m-staging"),
+    h("thead", null, h("tr", null, h("th", null, "批次"), h("th", null, "type"), h("th", null, "name / 描述"), h("th", null, "状态"))),
+    h("tbody", null, s.map(x => h("tr", null,
+      h("td", { class: "mono faint" }, x.run), h("td", { class: "mono" }, x.type),
+      h("td", null, h("div", { class: "mono" }, x.name), h("div", { class: "muted", style: "font-size:12.5px" }, x.description)),
+      h("td", null, x.status ? h("span", { class: "badge b-gray" }, x.status) : "")))));
+}
+
+// ---------------------------------------------------------------- doc dialog
+async function openDoc(docId, chunkId, terms) {
+  const dlg = $("#doc");
+  $("#doc-title").textContent = "加载中…";
+  fill($("#doc-meta")); fill($("#doc-body"));
+  if (!dlg.open) dlg.showModal();
+  let r;
+  try { r = await api("/api/doc", { id: docId }); }
+  catch (e) { $("#doc-title").textContent = "打不开"; fill($("#doc-body"), h("div", { class: "err" }, e.message)); return; }
+  const d = r.doc, m = r.meta || {};
+  $("#doc-title").textContent = r.title || d.doc_id;
+  fill($("#doc-meta"),
+    h("div", null, layerBadge(d.layer), " ", d.source, ` · ${d.n_chunks} 块 · 文件修改 ${fmtTime(d.mtime)} · 入索引 ${fmtTime(d.indexed_at)}`),
+    h("div", { style: "word-break:break-all" }, m.session_id ? `session ${m.session_id} · ${m.timestamp || ""} · 第 ${m.turn ?? "?"} 回合` : d.source_path));
+  let target = null;
+  fill($("#doc-body"), r.chunks.map(c => {
+    const el = h("div", { class: "chunk" + (c.id === chunkId ? " hit" : "") },
+      h("div", { class: "ch" }, `#${c.ord}${c.heading ? " · " + c.heading : ""} · ${c.text.length} 字`),
+      h("div", { class: "text" }, highlight(c.text, terms)));
+    if (c.id === chunkId) target = el;
+    return el;
+  }));
+  if (target) target.scrollIntoView({ block: "center" });
+}
+$("#doc-x").addEventListener("click", () => $("#doc").close());
+$("#doc").addEventListener("click", e => { if (e.target.id === "doc") $("#doc").close(); });
+
+// ---------------------------------------------------------------- review
+let RV = null;
+async function loadReview() {
+  fill($("#rv-cands"), h("div", { class: "loading" }, "读取中…"));
+  try { RV = await api("/api/review"); } catch (e) { fill($("#rv-cands"), h("div", { class: "err" }, e.message)); return; }
+  renderReview();
+}
+
+async function act(payload, confirmText, btn) {
+  if (confirmText && !confirm(confirmText)) return;
+  const btns = $$("#v-review button");
+  btns.forEach(b => b.disabled = true);
+  if (btn) btn.textContent = "执行中…";
+  let r;
+  try {
+    const res = await fetch("/api/action", { method: "POST", headers: { "Content-Type": "application/json", "X-Mem-Web": "1" }, body: JSON.stringify(payload) });
+    r = await res.json();
+  } catch (e) { r = { ok: false, error: e.message }; }
+  btns.forEach(b => b.disabled = false);
+  fill($("#rv-out"), h("div", { class: "out-box" + (r.ok ? "" : " fail") },
+    h("div", { class: "oh" }, h("span", { class: "badge " + (r.ok ? "b-ok" : "b-bad") }, r.ok ? "成功" : "失败"),
+      h("span", { class: "mono" }, r.cmd || payload.action), r.ms ? h("span", { class: "faint" }, `${r.ms} ms`) : null,
+      h("button", { class: "btn ghost small", style: "margin-left:auto", onclick: () => fill($("#rv-out")) }, "关闭")),
+    h("pre", { class: "out" }, r.error || r.output || "（无输出）")));
+  $("#rv-out").scrollIntoView({ behavior: "smooth", block: "start" });
+  if (payload.action !== "audit_dry") {
+    await loadReview();
+    MEM = null; loaded.memory = false;   // 记忆条目页下次进入时重读
+    loadOverview();
+  }
+}
+
+function bodyToggle(text) {
+  const pre = h("pre", { class: "text", hidden: true }, text);
+  const b = h("button", { class: "btn ghost small", onclick: () => { pre.hidden = !pre.hidden; b.textContent = pre.hidden ? "看全文" : "收起"; } }, "看全文");
+  return [b, pre];
+}
+
+function candItem(c, rejected) {
+  const [tb, pre] = bodyToggle(c.body);
+  return h("div", { class: "rv-item" },
+    h("div", { class: "hd" },
+      h("span", { class: "badge b-gray" }, c.type), h("span", { class: "mono" }, c.name),
+      c.created ? h("span", { class: "faint" }, c.created) : null,
+      h("div", { class: "acts" }, tb,
+        rejected
+          ? h("button", { class: "btn ghost small", onclick: e => act({ action: "restore", run: c.run, file: c.file }, null, e.target) }, "捞回")
+          : h("button", { class: "btn ghost small danger", onclick: e => act({ action: "reject", run: c.run, file: c.file }, null, e.target) }, "拒绝"))),
+    h("div", { class: "desc" }, c.description),
+    c.from_session ? h("div", { class: "faint mono", style: "font-size:11.5px;margin-top:2px" }, "来自会话 " + c.from_session) : null,
+    pre);
+}
+
+function renderReview() {
+  const r = RV;
+  const nCand = r.runs.reduce((s, x) => s + x.candidates.length, 0);
+  const total = nCand + r.auto.length + r.stale.length + r.lint.length;
+  const badge = $("#rv-n"); badge.hidden = !total; badge.textContent = total;
+  $("#rv-summary").textContent = `候选 ${nCand} · 待转正 ${r.auto.length} · 过期 ${r.stale.length} · 一致性问题 ${r.lint.length} · 未提交 ${r.git ? r.git.length : "—"}`;
+
+  $("#rv-c-note").textContent = `${nCand} 条 / ${r.runs.length} 个批次。拒绝 = 移进该批 rejected/；合入 = mem promote 把本批剩余候选全部写进正式库，并删掉整个批次目录（含 rejected/）`;
+  fill($("#rv-cands"), r.runs.length ? r.runs.map(b => h("div", { class: "rv-batch" },
+    h("div", { class: "bh" },
+      h("b", { class: "mono" }, b.run), h("span", { class: "muted" }, `待审 ${b.candidates.length} · 已拒 ${b.rejected.length}`),
+      h("button", { class: "btn ghost small", onclick: e => act({ action: "audit_dry", run: b.run }, null, e.target) }, "重新判定（dry-run，看理由）"),
+      h("button", { class: "btn small", onclick: e => act({ action: "promote", run: b.run },
+        b.candidates.length
+          ? `把批次 ${b.run} 的 ${b.candidates.length} 条候选合入正式库？\n\n${b.candidates.map(c => "· " + c.type + "/" + c.name).join("\n")}\n\n合入后整个批次目录（含 rejected/ 里 ${b.rejected.length} 条）会被删除。`
+          : `批次 ${b.run} 已没有待审候选，执行 promote 会直接清理这个目录（含 rejected/ 里 ${b.rejected.length} 条）。继续？`, e.target) },
+        b.candidates.length ? `合入本批 ${b.candidates.length} 条` : "清理空批次")),
+    b.candidates.map(c => candItem(c, false)),
+    b.rejected.length ? h("details", null, h("summary", null, `已拒绝 ${b.rejected.length} 条（自动拒 / 重复 / 你拒的），可捞回`),
+      h("div", { style: "margin-top:8px" }, b.rejected.map(c => candItem(c, true)))) : null))
+    : h("div", { class: "empty" }, "staging 是空的"));
+
+  fill($("#rv-auto"), r.auto.length ? r.auto.map(m => {
+    const [tb, pre] = bodyToggle(m.body);
+    return h("div", { class: "rv-item" },
+      h("div", { class: "hd" }, h("span", { class: "badge b-gray" }, m.type), h("span", { class: "mono" }, m.name),
+        m.verified_at ? h("span", { class: "faint" }, "验证于 " + m.verified_at) : null,
+        h("div", { class: "acts" }, tb,
+          h("button", { class: "btn small", onclick: e => act({ action: "approve", name: m.name }, `转正 ${m.name}？\n转正后下次会话开场就会注入它。`, e.target) }, "转正"),
+          h("button", { class: "btn ghost small danger", onclick: e => act({ action: "archive", name: m.name }, `归档 ${m.name}？\n归档后不进开场注入，仍可检索；可用 mem archive --undo 还原。`, e.target) }, "归档"))),
+      h("div", { class: "desc" }, m.description),
+      (m.evidence || []).map(ev => h("div", { class: "faint mono", style: "font-size:11.5px;margin-top:2px" }, "证据 " + ev)),
+      pre);
+  }) : h("div", { class: "empty" }, "没有待转正的条目"));
+
+  $("#rv-stale-note").textContent = `task- 开头、超过 ${r.stale_days} 天没改、未归档；确认任务收尾后归档`;
+  fill($("#rv-stale"), r.stale.length ? r.stale.map(m => h("div", { class: "rv-item" },
+    h("div", { class: "hd" }, h("span", { class: "badge b-gray" }, m.type), h("span", { class: "mono" }, m.name),
+      h("span", { class: "faint" }, `最后修改 ${fmtTime(m.mtime)}（${ago(m.mtime)}）`),
+      h("div", { class: "acts" },
+        h("button", { class: "btn ghost small", onclick: () => openDoc(m.path, null, []) }, "看全文"),
+        h("button", { class: "btn ghost small danger", onclick: e => act({ action: "archive", name: m.name }, `归档 ${m.name}？`, e.target) }, "归档"))),
+    h("div", { class: "desc" }, m.description))) : h("div", { class: "empty" }, "没有过期的任务记忆"));
+
+  fill($("#rv-lint"), r.lint.length ? h("ul", { style: "margin:0;padding-left:18px" }, r.lint.map(x => h("li", { class: "mono", style: "font-size:12.5px" }, x)))
+    : h("div", { class: "empty" }, "文件 ↔ 索引行 ↔ frontmatter 一致"));
+  fill($("#rv-git"), r.git == null ? h("div", { class: "empty" }, "数据根不是 git 仓库")
+    : r.git.length ? [h("pre", { class: "out" }, r.git.join("\n")), h("div", { class: "note" }, "提交请在终端：mem sync --commit（只提交不 push）")]
+    : h("div", { class: "empty" }, "干净"));
+}
+$("#rv-sync").addEventListener("click", e => act({ action: "sync" }, "执行 mem sync？\n对账 + 增量索引 L1 + 规整待抽取队列，不提交 git。", e.target));
+$("#rv-reload").addEventListener("click", loadReview);
+
+// ---------------------------------------------------------------- about
+function renderAbout(o) {
+  const t = o.totals, layers = {};
+  o.by_source.forEach(r => { layers[r.layer] = (layers[r.layer] || 0) + r.chunks; });
+  $$("[data-layer-n]").forEach(el => {
+    const l = el.dataset.layerN;
+    el.textContent = l === "L3" && !layers.L3 ? "未启用（不进索引）" : `${fmtN(layers[l] || 0)} 块 · ${pct(layers[l] || 0, t.chunks)}`;
+  });
+  $$("[data-l1-pct]").forEach(el => { el.textContent = pct(layers.L1 || 0, t.chunks); });
+  const sources = l => o.by_source.filter(r => r.layer === l).map(r => r.source).join(" / ");
+  $("#ab-layer-note").textContent = `来源：L1 ${sources("L1")}；L2 ${sources("L2")}${layers.L3 ? "；L3 " + sources("L3") : ""}。共 ${fmtN(t.docs)} 个文档。`;
+
+  const vec = (o.tables.find(x => x.group === "向量") || {}).bytes;
+  const raw = t.chunks * 512 * 4;
+  const gauge = (label, val, max, right) => h("div", { class: "gauge" },
+    h("span", { style: "width:150px;flex:none" }, label),
+    h("div", { class: "bar" }, h("i", { style: `width:${Math.max(Math.min(val / max, 1) * 100, 0.5)}%` })),
+    h("span", { class: "num muted", style: "width:220px;flex:none" }, right));
+  fill($("#ab-gauges"),
+    gauge("块数 / 换 ANN 门槛", t.chunks, 100000, `${fmtN(t.chunks)} / 100,000（${pct(t.chunks, 100000)}）`),
+    gauge("向量矩阵（内存）", raw, 1024 ** 3, `${fmtBytes(raw)}（库内含页开销 ${fmtBytes(vec)}）`),
+    h("p", { class: "note" },
+      `当前 ${fmtN(t.chunks)} 块，暴力检索远在门槛内，一次语义检索毫秒级。` +
+      `删掉大量文档（如关闭会话层）后库文件不会自己变小，要先 FTS5 optimize 再 VACUUM。`));
+}
+$$("[data-jump]").forEach(a => a.addEventListener("click", e => {
+  e.preventDefault();
+  document.getElementById(a.dataset.jump).scrollIntoView({ behavior: "smooth", block: "start" });
+}));
+
+// ---------------------------------------------------------------- wiring
+const LOADERS = {
+  overview: loadOverview,
+  search: () => $("#s-q").focus(),
+  keyword: () => loadHot(),
+  memory: loadMemories,
+  review: loadReview,
+};
+
+$("#s-form").addEventListener("submit", e => { e.preventDefault(); doSearch(); });
+bindSeg($("#s-mode"), () => $("#s-q").value.trim() && doSearch());
+$("#s-layer").addEventListener("change", () => $("#s-q").value.trim() && doSearch());
+$("#s-k").addEventListener("change", () => $("#s-q").value.trim() && doSearch());
+
+$("#t-form").addEventListener("submit", e => { e.preventDefault(); analyzeTerm(); });
+$("#t-search").addEventListener("click", () => {
+  const t = $("#t-q").value.trim(); if (!t) return;
+  $("#s-q").value = t; setSeg($("#s-mode"), "keyword"); goTab("search"); doSearch();
+});
+bindSeg($("#h-kind"), loadHot);
+$("#h-scope").addEventListener("change", loadHot);
+$("#h-limit").addEventListener("change", loadHot);
+$("#h-hide").addEventListener("change", loadHot);
+
+$("#m-q").addEventListener("input", renderMemories);
+$("#m-status").addEventListener("change", renderMemories);
+
+$("#reload").addEventListener("click", () => {
+  for (const k in loaded) delete loaded[k];
+  OV = null; MEM = null;
+  showTab((location.hash.slice(1) || "overview").split("?")[0]);
+  if (!loaded.overview) { loaded.overview = true; loadOverview(); }
+});
+
+// 首屏：概览数据顶栏也要用，总是先拉
+(function init() {
+  const [tab, qs] = (location.hash.slice(1) || "overview").split("?");
+  if (tab === "search" && qs) {
+    const p = new URLSearchParams(qs);
+    $("#s-q").value = p.get("q") || "";
+    if (p.get("mode")) setSeg($("#s-mode"), p.get("mode"));
+  }
+  loaded.overview = true; loadOverview();
+  showTab(tab);
+  if (tab !== "review") api("/api/review").then(r => { RV = r; renderReview(); }).catch(() => {});
+  if (tab === "search" && $("#s-q").value) doSearch();
+  if (tab === "keyword" && qs) analyzeTerm(new URLSearchParams(qs).get("t") || "");
+})();
+</script>
+</body>
+</html>
